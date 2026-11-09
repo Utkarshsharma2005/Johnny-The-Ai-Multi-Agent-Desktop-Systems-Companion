@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+
+# Node / Desktop
+node_modules/
+apps/desktop/dist/
+apps/desktop/src-tauri/target/
+
+# Environment & Secrets
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+id_rsa
+secrets/
+.johnny/
+backend/.johnny/
+*.log
+backend/logs/
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+docs/
+logs/
+backend/.johnny/credentials
+backend/.env*
+backend/instance
+backend/uploads

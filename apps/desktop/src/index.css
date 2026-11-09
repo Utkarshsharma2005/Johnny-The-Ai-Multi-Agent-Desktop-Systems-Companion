@@ -1,0 +1,695 @@
+/* ═══════════════════════════════════════════════════════════════════
+ * Johnny Desktop AI Pet — Main Stylesheet
+ *
+ * Layer order:
+ *   1. Design tokens  (./theme/tokens.css)
+ *   2. Reset & base   (this file)
+ *   3. Pet overlay    (pet-layer, pet, speech-bubble, skill-wheel…)
+ *   4. Console panel  (glass-panel, tabs, chat, sub-panels…)
+ *   5. Keyframe animations
+ * ═══════════════════════════════════════════════════════════════════ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap');
+@import './theme/tokens.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── 1. Reset ──────────────────────────────────────────────────────── */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  background: transparent !important;
+  overflow: hidden;
+  font-family: var(--j-font);
+  font-size: var(--j-font-size-base);
+  line-height: var(--j-line-height);
+  color: var(--j-text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  user-select: none;
+  pointer-events: none;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* ── 2. Scrollbars ─────────────────────────────────────────────────── */
+
+::-webkit-scrollbar        { width: 5px; height: 5px; }
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-thumb  { background: var(--j-border-bright); border-radius: var(--j-r-full); }
+::-webkit-scrollbar-thumb:hover { background: hsla(230,30%,60%,0.35); }
+
+/* ── 3. Pet Layer ──────────────────────────────────────────────────── */
+
+.pet-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: var(--j-z-pet);
+}
+
+/* The actual pet element — engine writes transform to this */
+.pet {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: auto;
+  cursor: grab;
+  touch-action: none;
+  will-change: transform;
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+.pet[data-dragging='true'] {
+  cursor: grabbing;
+}
+
+.pet-body {
+  width: 100%;
+  height: 100%;
+  transition: transform 200ms var(--j-spring);
+}
+
+.pet:hover .pet-body {
+  transform: scale(1.06) translateY(-2px);
+}
+
+.pet[data-dragging='true'] .pet-body {
+  transform: scale(1.1) rotate(-4deg);
+  filter: drop-shadow(0 12px 24px rgba(0,0,0,0.6));
+}
+
+/* State-specific glow rings on the pet */
+.pet[data-state='thinking'] .pet-body {
+  filter: drop-shadow(0 0 16px var(--j-accent-glow));
+}
+.pet[data-state='working'] .pet-body {
+  filter: drop-shadow(0 0 18px hsla(38,92%,56%,0.5));
+  animation: j-working-bob 0.6s ease-in-out infinite;
+}
+.pet[data-state='celebrating'] .pet-body {
+  filter: drop-shadow(0 0 20px hsla(160,72%,45%,0.6));
+  animation: j-celebrate-jump 0.4s var(--j-spring) 3;
+}
+.pet[data-state='error'] .pet-body {
+  filter: drop-shadow(0 0 16px hsla(0,78%,60%,0.6));
+  animation: j-error-shake 0.35s ease-in-out 2;
+}
+.pet[data-state='dizzy'] .pet-body {
+  animation: j-dizzy-spin 0.5s ease-in-out infinite;
+}
+.pet[data-state='sleeping'] {
+  filter: brightness(0.85);
+}
+
+/* Floating z-z-z when sleeping */
+.pet[data-state='sleeping']::after {
+  content: 'z z z';
+  position: absolute;
+  left: 60%;
+  top: -16px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: var(--j-text-dim);
+  text-shadow: 0 1px 4px rgba(0,0,0,0.4);
+  animation: j-zzz 2.8s ease-in-out infinite;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+/* Gear icon when working */
+.pet[data-state='working']::before {
+  content: '⚙';
+  position: absolute;
+  right: -8px;
+  top: -8px;
+  font-size: 14px;
+  animation: j-spin 1s linear infinite;
+  pointer-events: none;
+  filter: drop-shadow(0 0 4px var(--j-amber));
+}
+
+/* Sparkles when celebrating */
+.pet[data-state='celebrating']::after {
+  content: '✨';
+  position: absolute;
+  left: 50%;
+  top: -20px;
+  font-size: 18px;
+  transform: translateX(-50%);
+  animation: j-sparkle 0.5s ease-out both;
+  pointer-events: none;
+}
+
+/* ── 4. Speech Bubble ──────────────────────────────────────────────── */
+
+.speech-bubble {
+  position: relative;
+  max-width: 260px;
+  padding: 10px 14px;
+  line-height: 1.45;
+  color: var(--j-text);
+  overflow-wrap: break-word;
+  background: var(--j-glass-bg);
+  backdrop-filter: var(--j-glass-blur);
+  border: 1px solid var(--j-border-bright);
+  border-radius: var(--j-r-lg);
+  box-shadow: var(--j-shadow-md);
+}
+
+.speech-bubble-text {
+  font-size: 12px;
+  color: var(--j-text-sub);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+}
+
+/* Bubble tail pointing down-right toward the pet */
+.speech-bubble-tail {
+  position: absolute;
+  right: 22px;
+  bottom: -7px;
+  width: 12px;
+  height: 12px;
+  transform: rotate(45deg);
+  background: var(--j-glass-bg);
+  border-right: 1px solid var(--j-border-bright);
+  border-bottom: 1px solid var(--j-border-bright);
+}
+
+/* ── 5. Console Panel ──────────────────────────────────────────────── */
+
+.console-panel {
+  position: fixed;
+  top: 50%;
+  right: 20px;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  background: var(--j-glass-bg);
+  backdrop-filter: var(--j-glass-blur);
+  border: 1px solid var(--j-border-bright);
+  border-radius: var(--j-r-xl);
+  box-shadow: var(--j-shadow-lg);
+  overflow: hidden;
+  z-index: var(--j-z-console);
+  pointer-events: auto;
+  transition: opacity var(--j-dur-base) var(--j-ease),
+              transform var(--j-dur-slow) var(--j-spring);
+}
+
+.console-panel.is-hidden {
+  opacity: 0;
+  transform: translateY(-50%) translateX(20px);
+  pointer-events: none;
+}
+
+/* Console header drag region */
+.console-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--j-border);
+  background: hsla(230, 16%, 7%, 0.6);
+  cursor: grab;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.console-header:active { cursor: grabbing; }
+
+.console-header-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--j-r-sm);
+  background: var(--j-accent-soft);
+  border: 1px solid var(--j-border-bright);
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.console-header-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.console-header-title h2 {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--j-text);
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+}
+
+.console-header-title p {
+  font-size: 10px;
+  color: var(--j-text-dim);
+  font-family: var(--j-font-mono);
+  line-height: 1.2;
+}
+
+/* ── 6. Tab bar ────────────────────────────────────────────────────── */
+
+.tab-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  padding: 6px 8px 0;
+  border-bottom: 1px solid var(--j-border);
+  background: hsla(230, 16%, 6%, 0.5);
+  overflow-x: auto;
+  flex-shrink: 0;
+  scrollbar-width: none;
+}
+.tab-bar::-webkit-scrollbar { display: none; }
+
+.tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--j-text-dim);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: var(--j-r-sm) var(--j-r-sm) 0 0;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color var(--j-dur-fast), background var(--j-dur-fast);
+  margin-bottom: -1px;
+  padding-bottom: 8px;
+}
+
+.tab-btn:hover {
+  color: var(--j-text-sub);
+  background: hsla(230,16%,14%,0.5);
+}
+
+.tab-btn.is-active {
+  color: var(--j-accent);
+  border-bottom-color: var(--j-accent);
+  background: hsla(230,16%,12%,0.8);
+}
+
+/* ── 7. Chat Messages ──────────────────────────────────────────────── */
+
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  min-height: 0;
+}
+
+.msg {
+  max-width: 84%;
+  padding: 9px 13px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  border-radius: var(--j-r-lg);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  user-select: text;
+  animation: j-msg-in 200ms var(--j-spring) both;
+}
+
+.msg-user {
+  align-self: flex-end;
+  background: var(--j-accent-soft);
+  border: 1px solid var(--j-border-bright);
+  border-bottom-right-radius: var(--j-r-xs);
+  color: var(--j-text);
+}
+
+.msg-johnny {
+  align-self: flex-start;
+  background: hsla(230,16%,13%,0.8);
+  border: 1px solid var(--j-border);
+  border-bottom-left-radius: var(--j-r-xs);
+  color: var(--j-text);
+}
+
+/* Streaming cursor blink */
+.stream-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 12px;
+  background: var(--j-accent);
+  margin-left: 2px;
+  vertical-align: middle;
+  animation: j-blink 0.8s steps(2, start) infinite;
+}
+
+/* ── 8. Chat Input ─────────────────────────────────────────────────── */
+
+.chat-input-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--j-border);
+  background: hsla(230,16%,7%,0.7);
+  flex-shrink: 0;
+}
+
+.chat-input {
+  flex: 1;
+  min-width: 0;
+  resize: none;
+  border: 1px solid var(--j-border-bright);
+  border-radius: var(--j-r-md);
+  background: var(--j-bg-elevated);
+  color: var(--j-text);
+  font: var(--j-font-size-base) / var(--j-line-height) var(--j-font);
+  padding: 8px 12px;
+  max-height: 100px;
+  outline: none;
+  transition: border-color var(--j-dur-fast), box-shadow var(--j-dur-fast);
+}
+
+.chat-input:focus {
+  border-color: var(--j-accent);
+  box-shadow: 0 0 0 3px var(--j-accent-soft);
+}
+
+.chat-input::placeholder { color: var(--j-text-faint); }
+.chat-input:disabled      { opacity: 0.5; cursor: not-allowed; }
+
+.send-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 50%;
+  background: var(--j-accent);
+  color: var(--j-on-accent);
+  cursor: pointer;
+  transition: background var(--j-dur-fast), transform var(--j-dur-fast);
+  flex-shrink: 0;
+}
+.send-btn:hover   { background: var(--j-accent-bright); }
+.send-btn:active  { transform: scale(0.9); }
+.send-btn:disabled { opacity: 0.35; cursor: default; pointer-events: none; }
+
+/* ── 9. Glass cards (sub-panels) ───────────────────────────────────── */
+
+.glass-card {
+  background: hsla(230,16%,11%,0.6);
+  border: 1px solid var(--j-border);
+  border-radius: var(--j-r-md);
+}
+
+.glass-panel {
+  background: var(--j-glass-bg);
+  backdrop-filter: var(--j-glass-blur);
+  border: 1px solid var(--j-border-bright);
+  border-radius: var(--j-r-xl);
+  box-shadow: var(--j-shadow-lg);
+}
+
+/* ── Universal Dark Glass Form Controls in Console ─────────────────── */
+.console-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  color: var(--j-text);
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* All interactive buttons inside Johnny console tabs */
+.console-body button {
+  background: hsla(230, 16%, 16%, 0.85) !important;
+  border: 1px solid hsla(230, 25%, 35%, 0.4) !important;
+  color: #F1F5F9 !important;
+  border-radius: 8px !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  padding: 6px 12px !important;
+  cursor: pointer !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3) !important;
+}
+
+.console-body button:hover:not(:disabled) {
+  background: hsla(230, 20%, 24%, 0.95) !important;
+  border-color: hsla(245, 80%, 65%, 0.6) !important;
+  color: #FFFFFF !important;
+  box-shadow: 0 0 14px hsla(245, 80%, 65%, 0.25) !important;
+  transform: translateY(-1px);
+}
+
+.console-body button:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
+}
+
+.console-body button:disabled {
+  opacity: 0.45 !important;
+  cursor: not-allowed !important;
+}
+
+/* All text inputs, textareas, selects inside Johnny console */
+.console-body input[type="text"],
+.console-body input[type="search"],
+.console-body input[type="password"],
+.console-body input[type="number"],
+.console-body textarea,
+.console-body select {
+  background: hsla(230, 16%, 8%, 0.9) !important;
+  border: 1px solid hsla(230, 20%, 25%, 0.6) !important;
+  color: #F8FAFC !important;
+  border-radius: 8px !important;
+  padding: 8px 12px !important;
+  font-size: 12px !important;
+  font-family: inherit;
+  outline: none !important;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.4) !important;
+}
+
+.console-body input::placeholder,
+.console-body textarea::placeholder {
+  color: hsla(230, 15%, 50%, 0.7) !important;
+}
+
+.console-body input:focus,
+.console-body textarea:focus,
+.console-body select:focus {
+  border-color: hsla(245, 80%, 65%, 0.8) !important;
+  box-shadow: 0 0 0 3px hsla(245, 80%, 65%, 0.25) !important;
+}
+
+/* Specific pill badges & status tags */
+.console-body span.rounded-full,
+.console-body span.rounded {
+  border-radius: 9999px;
+}
+
+/* ── 10. Icon buttons ──────────────────────────────────────────────── */
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--j-text-dim);
+  cursor: pointer;
+  transition: background var(--j-dur-fast), color var(--j-dur-fast), transform var(--j-dur-fast);
+  flex-shrink: 0;
+}
+.icon-btn:hover  { background: var(--j-bg-float); color: var(--j-text); }
+.icon-btn:active { transform: scale(0.88); }
+.icon-btn:disabled { opacity: 0.35; cursor: default; }
+
+/* ── 11. Resize handles ────────────────────────────────────────────── */
+
+.resize-handle {
+  position: absolute;
+  z-index: 30;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  transition: background var(--j-dur-fast);
+}
+.resize-handle:hover { background: var(--j-accent-soft); }
+.resize-handle.top-left     { top: 0;    left: 0;   cursor: nwse-resize; border-radius: var(--j-r-xl) 0 0 0; }
+.resize-handle.bottom-left  { bottom: 0; left: 0;   cursor: nesw-resize; border-radius: 0 0 0 var(--j-r-xl); }
+.resize-handle.bottom-right { bottom: 0; right: 0;  cursor: nwse-resize; border-radius: 0 0 var(--j-r-xl) 0; }
+
+/* ── 12. Progress / status bars ────────────────────────────────────── */
+
+.progress-bar {
+  height: 4px;
+  background: var(--j-bg-float);
+  border-radius: var(--j-r-full);
+  overflow: hidden;
+}
+.progress-bar-fill {
+  height: 100%;
+  border-radius: var(--j-r-full);
+  transition: width 400ms var(--j-ease);
+}
+
+/* ── 13. Badge chips ───────────────────────────────────────────────── */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--j-r-full);
+  font-size: 10px;
+  font-weight: 700;
+  font-family: var(--j-font-mono);
+  line-height: 1.4;
+}
+.badge-accent  { background: var(--j-accent-soft);  color: var(--j-accent);  border: 1px solid hsla(252,82%,62%,0.3); }
+.badge-green   { background: var(--j-green-soft);   color: var(--j-green);   border: 1px solid hsla(160,72%,45%,0.3); }
+.badge-amber   { background: var(--j-amber-soft);   color: var(--j-amber);   border: 1px solid hsla(38,92%,56%,0.3);  }
+.badge-red     { background: var(--j-red-soft);     color: var(--j-red);     border: 1px solid hsla(0,78%,60%,0.3);   }
+.badge-purple  { background: var(--j-purple-soft);  color: var(--j-purple);  border: 1px solid hsla(270,70%,65%,0.3); }
+.badge-cyan    { background: var(--j-cyan-soft);    color: var(--j-cyan);    border: 1px solid hsla(190,80%,55%,0.3); }
+
+/* ── 14. Section headings ──────────────────────────────────────────── */
+
+.section-heading {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--j-text-faint);
+  margin-bottom: 10px;
+}
+
+/* ── 15. No-scrollbar utility ──────────────────────────────────────── */
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* ══════════════════════════════════════════════════════════════════
+ *  KEYFRAME ANIMATIONS
+ * ══════════════════════════════════════════════════════════════════ */
+
+/* Pet behavior animations */
+@keyframes j-working-bob {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(-4px); }
+}
+
+@keyframes j-celebrate-jump {
+  0%   { transform: translateY(0) scale(1); }
+  40%  { transform: translateY(-14px) scale(1.1); }
+  70%  { transform: translateY(-6px) scale(1.05); }
+  100% { transform: translateY(0) scale(1); }
+}
+
+@keyframes j-error-shake {
+  0%, 100% { transform: translateX(0); }
+  25%  { transform: translateX(-6px) rotate(-2deg); }
+  75%  { transform: translateX(6px)  rotate(2deg); }
+}
+
+@keyframes j-dizzy-spin {
+  0%   { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes j-zzz {
+  0%   { opacity: 0; transform: translateY(4px) scale(0.8); }
+  40%  { opacity: 0.9; }
+  100% { opacity: 0; transform: translateY(-18px) scale(1.1); }
+}
+
+@keyframes j-sparkle {
+  0%   { opacity: 0; transform: translateX(-50%) scale(0.5) translateY(10px); }
+  60%  { opacity: 1; transform: translateX(-50%) scale(1.2) translateY(-8px); }
+  100% { opacity: 0; transform: translateX(-50%) scale(1) translateY(-20px); }
+}
+
+@keyframes j-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Activity / status */
+@keyframes j-pulse {
+  0%, 100% { opacity: 1;   transform: scale(1);    }
+  50%       { opacity: 0.5; transform: scale(0.75); }
+}
+
+@keyframes j-flash {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.2; }
+}
+
+@keyframes j-bounce-dot {
+  0%, 80%, 100% { transform: translateY(0); }
+  40%            { transform: translateY(-5px); }
+}
+
+/* UI entry animations */
+@keyframes j-wheel-in {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0.6); }
+  to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+@keyframes j-msg-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0)   scale(1); }
+}
+
+@keyframes j-blink {
+  to { visibility: hidden; }
+}
+
+/* Panel slide-in from right */
+@keyframes j-slide-in-right {
+  from { opacity: 0; transform: translateX(24px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* Fade up */
+@keyframes j-fade-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
