@@ -176,6 +176,7 @@ export function App() {
           queryMemory={api.queryMemory}
           recordMemory={api.recordMemory}
           clearMemoryTier={api.clearMemoryTier}
+          onStopGenerating={api.stopGenerating}
           onClose={closeConsole}
           defaultTab={activeTab}
           character={character}

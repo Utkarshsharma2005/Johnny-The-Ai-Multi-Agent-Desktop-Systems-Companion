@@ -34,10 +34,45 @@ from pydantic import BaseModel, Field, field_validator
 from backend.models.router import router_instance
 from backend.telemetry.latency import LatencyTracker, async_measure_stage
 from backend.core.agent_bus import agent_bus, EventType, AgentEvent
+from backend.memory.memory_manager import memory_manager
 
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/chat", tags=["Chat"])
+
+
+def _process_memory_integration(prompt: str) -> str:
+    """
+    1. Checks if prompt contains explicit memory storage triggers (e.g. 'remember that...').
+    2. Records short-term conversational context into memory manager.
+    3. Returns prompt enriched with recalled project facts and user preferences.
+    """
+    clean_p = prompt.strip()
+    lower_p = clean_p.lower()
+
+    try:
+        # Detect explicit memory storage triggers
+        for trig in ["remember that", "remember:", "take note that", "please remember", "note that", "prefer that"]:
+            if trig in lower_p:
+                fact = clean_p[lower_p.find(trig) + len(trig):].strip(" :,-.")
+                if fact:
+                    tier = "project" if any(w in lower_p for w in ["project", "repo", "code", "app", "stack", "server", "backend"]) else "long_term"
+                    memory_manager.record(
+                        tier=tier,
+                        key=f"fact_{int(time.time())}",
+                        value=fact,
+                        tags=["user_preference", "remembered_fact"]
+                    )
+                    break
+
+        # Record prompt snippet into short-term buffer
+        memory_manager.record("short_term", key="user_turn", value=clean_p[:250])
+
+        # Enrich prompt with relevant memories
+        return memory_manager.enrich_prompt_context(clean_p)
+    except Exception as mem_err:
+        log.warning("Memory integration error: %s", mem_err)
+        return clean_p
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -126,6 +161,7 @@ async def generate_chat(request: ChatRequest):
         intent = _classify_intent(request.prompt)
         model_id = request.model_id or router_instance.resolve_model_id(intent)
         history = [{"role": m.role, "content": m.content} for m in request.history]
+        effective_prompt = _process_memory_integration(request.prompt)
 
     log.info("Chat generate | intent=%s model=%s history_turns=%d", intent, model_id, len(history))
 
@@ -138,7 +174,7 @@ async def generate_chat(request: ChatRequest):
 
     try:
         async with async_measure_stage(tracker, "model"):
-            result = await provider.generate(request.prompt, model_id=model_id, history=history)
+            result = await provider.generate(effective_prompt, model_id=model_id, history=history)
     except Exception as e:
         log.error("NIM generate failed: %s", e)
         agent_bus.publish(AgentEvent(
@@ -173,6 +209,7 @@ async def stream_chat(request: ChatRequest):
     intent = _classify_intent(request.prompt)
     model_id = request.model_id or router_instance.resolve_model_id(intent)
     history = [{"role": m.role, "content": m.content} for m in request.history]
+    effective_prompt = _process_memory_integration(request.prompt)
 
     log.info("Chat stream | intent=%s model=%s history_turns=%d", intent, model_id, len(history))
 
@@ -191,7 +228,7 @@ async def stream_chat(request: ChatRequest):
         tokens_yielded = 0
 
         try:
-            async for chunk in provider.stream(request.prompt, model_id=model_id, history=history):
+            async for chunk in provider.stream(effective_prompt, model_id=model_id, history=history):
                 if isinstance(chunk, (tuple, list)):
                     chunk_type, token = chunk[0], chunk[1]
                 else:

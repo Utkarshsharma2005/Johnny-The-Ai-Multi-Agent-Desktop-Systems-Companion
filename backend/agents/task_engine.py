@@ -239,6 +239,12 @@ class AutonomousTaskEngine:
                     if not approved_this_step:
                         task.status = TaskStatus.AWAITING_APPROVAL
                         task.add_log(approval_note)
+                        agent_bus.publish_debate(
+                            agent="critic",
+                            target="planner",
+                            content=f"Step {step.step_number} ({step.tool_name}) requires Level {tool_level.value} elevated privileges. Gating execution for explicit user confirmation.",
+                            severity="warn"
+                        )
                         agent_bus.publish(AgentEvent(type=EventType.PERMISSION_REQ, agent="executor",
                             content=approval_note, metadata=self._approval_metadata(task.pending_approval),
                             severity="critical" if tool_level == SecurityLevel.LEVEL_3_DANGEROUS_SYSTEM else "warn"))
@@ -351,14 +357,53 @@ class AutonomousTaskEngine:
 
     def _decompose_plan(self, goal: str, locked: Optional[Dict[str, Any]] = None) -> List[TaskStep]:
         """
-        Generates plan steps based on goal text.
+        Dynamically decomposes user goals into structured, phased task execution steps
+        matched to available workspace, browser, git, and terminal tools.
         """
-        steps = [
-            TaskStep(1, "Inspect workspace & environment status", tool_name="list_dir", tool_args={"dir_path": "."}),
-            TaskStep(2, "Inspect active git repository status", tool_name="git_status", tool_args={}),
-            TaskStep(3, "Inspect project specification", tool_name="read_file", tool_args={"file_path": "README.md"})
+        import re
+        goal_lower = goal.lower().strip()
+        url_match = re.search(r'https?://[^\s\'"]+', goal)
+        target_url = url_match.group(0) if url_match else None
+
+        # ── 1. Web & Browser Automation Goals ──────────────────────────────
+        if target_url or any(k in goal_lower for k in ["browse", "website", "web", "navigate", "page", "url", "scrape"]):
+            url = target_url or "https://example.com"
+            return [
+                TaskStep(1, f"Navigate browser controller to {url}", tool_name="browser_navigate", tool_args={"url": url}),
+                TaskStep(2, "Capture rendered page viewport screenshot & inspect DOM", tool_name="browser_screenshot", tool_args={}),
+                TaskStep(3, "Verify extracted content & interactive links", tool_name="list_dir", tool_args={"dir_path": ".johnny/browser_screenshots"})
+            ]
+
+        # ── 2. Test Execution & Quality Assurance ──────────────────────────
+        if any(k in goal_lower for k in ["test", "verify", "run test", "pytest", "check"]):
+            return [
+                TaskStep(1, "Inspect repository and active working state", tool_name="git_status", tool_args={}),
+                TaskStep(2, "Inspect test suite directory and test manifests", tool_name="list_dir", tool_args={"dir_path": "tests"}),
+                TaskStep(3, "Execute automated test verification in sandbox", tool_name="run_terminal_command", tool_args={"command": "MODEL_PROVIDER=mock pytest tests/ -q"})
+            ]
+
+        # ── 3. Version Control & Git Operations ────────────────────────────
+        if any(k in goal_lower for k in ["git", "commit", "diff", "branch", "push"]):
+            return [
+                TaskStep(1, "Inspect git repository status and modified files", tool_name="git_status", tool_args={}),
+                TaskStep(2, "Review active code diffs across workspace", tool_name="git_diff", tool_args={}),
+                TaskStep(3, "Verify branch consistency against project spec", tool_name="read_file", tool_args={"file_path": "README.md"})
+            ]
+
+        # ── 4. Docker & Container Management ──────────────────────────────
+        if any(k in goal_lower for k in ["docker", "container", "service"]):
+            return [
+                TaskStep(1, "Inspect active Docker containers", tool_name="docker_ps", tool_args={}),
+                TaskStep(2, "Inspect workspace container configuration", tool_name="list_dir", tool_args={"dir_path": "."})
+            ]
+
+        # ── 5. General Engineering & Architecture ──────────────────────────
+        return [
+            TaskStep(1, "Inspect workspace file tree & dependencies", tool_name="list_dir", tool_args={"dir_path": "."}),
+            TaskStep(2, "Inspect active repository status & branch", tool_name="git_status", tool_args={}),
+            TaskStep(3, "Inspect project architecture & requirements", tool_name="read_file", tool_args={"file_path": "README.md"}),
+            TaskStep(4, "Run sandbox verification checks", tool_name="run_terminal_command", tool_args={"command": "MODEL_PROVIDER=mock pytest tests/ -q"})
         ]
-        return steps
 
 # Global singleton task engine instance
 task_engine = AutonomousTaskEngine()

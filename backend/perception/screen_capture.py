@@ -12,6 +12,15 @@ class DesktopScreenCapturer:
     """
 
     @classmethod
+    def capture(cls, bbox: Optional[Tuple[int, int, int, int]] = None) -> Optional[Image.Image]:
+        """
+        Convenience method to capture and return the desktop frame as a PIL Image.
+        Works when called as DesktopScreenCapturer.capture() or capturer.capture().
+        """
+        ok, msg, img = cls.capture_frame(bbox=bbox)
+        return img if ok else None
+
+    @classmethod
     def capture_frame(cls, bbox: Optional[Tuple[int, int, int, int]] = None) -> Tuple[bool, str, Optional[Image.Image]]:
         """
         Captures the desktop screen.

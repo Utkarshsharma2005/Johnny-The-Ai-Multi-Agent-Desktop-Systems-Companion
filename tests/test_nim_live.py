@@ -7,8 +7,8 @@ LIVE_NIM_KEY = os.environ.get("NIM_API_KEY") or os.environ.get("NVIDIA_API_KEY")
 IS_LIVE_NIM_CONFIGURED = bool(LIVE_NIM_KEY and not LIVE_NIM_KEY.startswith("nvapi-your-key") and not LIVE_NIM_KEY == "nvapi-placeholder")
 
 pytestmark = pytest.mark.skipif(
-    not IS_LIVE_NIM_CONFIGURED,
-    reason="NIM API Key not set in environment (NIM_API_KEY or NVIDIA_API_KEY). Live test skipped."
+    not IS_LIVE_NIM_CONFIGURED or os.environ.get("MODEL_PROVIDER") == "mock",
+    reason="NIM API Key not set in environment or running in mock provider mode."
 )
 
 @pytest.mark.asyncio

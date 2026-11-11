@@ -19,6 +19,7 @@ import {
   RotateCcw,
   Maximize2,
   Minus,
+  Square,
   X
 } from 'lucide-react';
 import {
@@ -79,6 +80,7 @@ interface ChatConsoleProps {
   queryMemory?: (term?: string, tier?: string) => Promise<any>;
   recordMemory?: (tier: string, key: string, value: string, tags?: string[]) => Promise<boolean>;
   clearMemoryTier?: (tier: string) => Promise<boolean>;
+  onStopGenerating?: () => void;
   onClose: () => void;
   defaultTab?: string;
   character?: string;
@@ -119,6 +121,7 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
   queryMemory,
   recordMemory,
   clearMemoryTier,
+  onStopGenerating,
   onClose,
   defaultTab,
   character = 'spongebob',
@@ -553,13 +556,30 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
               className="chat-input"
               style={{ resize: 'none' }}
             />
-            <button
-              type="submit"
-              disabled={isProcessing || (!inputText.trim() && !imagePath.trim())}
-              className="send-btn"
-            >
-              <Send size={15} />
-            </button>
+            {isProcessing ? (
+              <button
+                type="button"
+                onClick={onStopGenerating}
+                className="send-btn"
+                title="Pause / Interrupt Generation"
+                style={{
+                  background: 'var(--j-amber-soft)',
+                  color: 'var(--j-amber)',
+                  border: '1px solid var(--j-amber)'
+                }}
+              >
+                <Square size={13} fill="currentColor" />
+              </button>
+            ) : (
+              <button
+                type="submit"
+                disabled={!inputText.trim() && !imagePath.trim()}
+                className="send-btn"
+                title="Send Message"
+              >
+                <Send size={15} />
+              </button>
+            )}
           </div>
         </form>
       )}

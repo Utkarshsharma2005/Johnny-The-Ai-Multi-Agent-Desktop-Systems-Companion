@@ -4,6 +4,7 @@ from PIL import Image
 from httpx import AsyncClient, ASGITransport
 
 from backend.main import app
+from backend.core.config import settings
 from backend.core.evidence_merger import EvidenceMerger, ModelOpinion, MergedEvidenceReport
 from backend.models.orchestrator import MultimodelOrchestrator, multimodel_orchestrator
 from backend.models.mock_provider import MockProvider

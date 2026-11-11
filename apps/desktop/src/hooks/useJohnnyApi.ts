@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 
 export interface TelemetryData {
   routing_ms: number;
@@ -144,6 +144,15 @@ export function useJohnnyApi() {
   const [activeTask, setActiveTask] = useState<TaskState | null>(null);
   const [browserStatus, setBrowserStatus] = useState<BrowserStatusState | null>(null);
   const [memoryItems, setMemoryItems] = useState<MemoryItem[]>([]);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  const stopGenerating = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsProcessing(false);
+  }, []);
 
   // --- Browser Automation APIs ---
   const fetchBrowserStatus = useCallback(async () => {
@@ -535,11 +544,15 @@ export function useJohnnyApi() {
           }));
 
         try {
-          // Primary: SSE streaming endpoint
+          // Primary: SSE streaming endpoint with interrupt signal support
+          const controller = new AbortController();
+          abortControllerRef.current = controller;
+
           const response = await fetch(`${API_BASE_URL}/chat/stream`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt, stream: true, history: historyPayload })
+            body: JSON.stringify({ prompt, stream: true, history: historyPayload }),
+            signal: controller.signal
           });
 
           if (!response.ok || !response.body) {
@@ -606,7 +619,17 @@ export function useJohnnyApi() {
             )
           );
 
-        } catch (streamErr) {
+        } catch (streamErr: any) {
+          if (streamErr?.name === 'AbortError') {
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === johnnyMessageId
+                  ? { ...msg, text: msg.text ? `${msg.text} ⏸️ (Paused)` : '⏸️ Generation paused.', isStreaming: false }
+                  : msg
+              )
+            );
+            return;
+          }
           // Fallback: non-streaming /generate endpoint (same history, same routing)
           console.warn('Streaming failed, falling back to /generate:', streamErr);
           const fallbackRes = await fetch(`${API_BASE_URL}/chat/generate`, {
@@ -685,6 +708,7 @@ export function useJohnnyApi() {
     memoryItems,
     queryMemory,
     recordMemory,
-    clearMemoryTier
+    clearMemoryTier,
+    stopGenerating
   };
 }

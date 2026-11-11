@@ -28,11 +28,13 @@ class ModelRouter:
 
     def resolve_model_id(self, task_type: str) -> str:
         task_lower = task_type.lower()
-        if "vision" in task_lower or "image" in task_lower:
-            return settings.MINIMAX_MODEL_ID
+        if "vision" in task_lower or "image" in task_lower or "screen" in task_lower:
+            return settings.NEMOTRON_VL_MODEL_ID
+        elif "fast" in task_lower or "triage" in task_lower or "quick" in task_lower:
+            return settings.GLM_MODEL_ID
         elif "code" in task_lower or "debug" in task_lower:
             return settings.DEEPSEEK_MODEL_ID
-        elif "plan" in task_lower:
+        elif "plan" in task_lower or "architect" in task_lower or "council" in task_lower:
             return settings.NEMOTRON_MODEL_ID
         else:
             return settings.LLAMA_MODEL_ID
