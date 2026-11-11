@@ -136,8 +136,8 @@ johnny/
 
 ### 1. Clone & Set Up Credentials
 ```bash
-git clone https://github.com/Utkarshsharma2005/jonny.git
-cd jonny
+   git clone https://github.com/Utkarshsharma2005/Johnny-The-Ai-Multi-Agent-Desktop-Systems-Companion.git
+   cd Johnny-The-Ai-Multi-Agent-Desktop-Systems-Companion
 
 # Configure your model keys (NVIDIA NIM, DeepSeek, etc.)
 # Stored locally with 0600 permissions in .johnny/credentials/
