@@ -11,53 +11,58 @@
  */
 
 :root {
-  /* ─── Brand Palette ──────────────────────────────────────────── */
-  --j-hue-base:   240;          /* Indigo-ish base hue              */
-  --j-hue-accent: 252;          /* Slightly more purple accent      */
+  /* ─── 25+ Year Principal Design Palette ──────────────────────── */
+  --j-canvas-primary:   #0B0F17;
+  --j-surface-elevated: #141923;
+  --j-border-divider:   #222937;
+  --j-muted-element:    #2E3747;
+  --j-text-primary:     #F4F6F9;
+  --j-text-secondary:   #8A94A6;
+  --j-accent-functional:#3E7BFA;
 
-  /* ─── Surface Hierarchy (darkest → lightest) ─────────────────── */
-  --j-bg-void:       hsl(230 18% 5%);   /* base window background    */
-  --j-bg-base:       hsl(230 15% 8%);   /* main panel background     */
-  --j-bg-elevated:   hsl(230 14% 11%);  /* card / sub-panel          */
-  --j-bg-float:      hsl(230 13% 14%);  /* hovered / selected row    */
-  --j-bg-tooltip:    hsl(230 12% 17%);  /* tooltip / popover         */
+  /* ─── Surface Hierarchy ──────────────────────────────────────── */
+  --j-bg-void:       #0B0F17;   /* base window background    */
+  --j-bg-base:       #0B0F17;   /* main panel background     */
+  --j-bg-elevated:   #141923;   /* card / sub-panel          */
+  --j-bg-float:      #1a212e;   /* hovered / selected row    */
+  --j-bg-tooltip:    #222937;   /* tooltip / popover         */
 
   /* ─── Glass / blur surfaces ──────────────────────────────────── */
-  --j-glass-bg:      hsla(230, 16%, 12%, 0.82);
-  --j-glass-border:  hsla(230, 30%, 60%, 0.10);
-  --j-glass-blur:    blur(20px) saturate(1.3);
+  --j-glass-bg:      rgba(20, 25, 35, 0.94);
+  --j-glass-border:  #222937;
+  --j-glass-blur:    blur(24px) saturate(1.35);
 
-  /* ─── Accent (primary interactive color) ─────────────────────── */
-  --j-accent:         hsl(var(--j-hue-accent) 82% 62%);   /* indigo-400   */
-  --j-accent-bright:  hsl(var(--j-hue-accent) 88% 70%);   /* hover        */
-  --j-accent-dim:     hsl(var(--j-hue-accent) 60% 45%);   /* pressed/muted*/
-  --j-accent-soft:    hsla(var(--j-hue-accent), 80%, 62%, 0.14); /* bg tint */
-  --j-accent-glow:    hsla(var(--j-hue-accent), 80%, 62%, 0.40); /* shadows  */
-  --j-on-accent:      hsl(0 0% 100%);
+  /* ─── Accent (primary functional interactive color) ──────────── */
+  --j-accent:         #3E7BFA;
+  --j-accent-bright:  #5B91FF;
+  --j-accent-dim:     #2B61D1;
+  --j-accent-soft:    rgba(62, 123, 250, 0.16);
+  --j-accent-glow:    rgba(62, 123, 250, 0.40);
+  --j-on-accent:      #FFFFFF;
 
   /* ─── Semantic Status Colors ──────────────────────────────────── */
-  --j-green:          hsl(160 72% 45%);
-  --j-green-soft:     hsla(160, 72%, 45%, 0.15);
-  --j-amber:          hsl(38 92% 56%);
-  --j-amber-soft:     hsla(38, 92%, 56%, 0.15);
-  --j-red:            hsl(0 78% 60%);
-  --j-red-soft:       hsla(0, 78%, 60%, 0.15);
-  --j-blue:           hsl(214 84% 60%);
-  --j-blue-soft:      hsla(214, 84%, 60%, 0.15);
-  --j-purple:         hsl(270 70% 65%);
-  --j-purple-soft:    hsla(270, 70%, 65%, 0.15);
-  --j-cyan:           hsl(190 80% 55%);
-  --j-cyan-soft:      hsla(190, 80%, 55%, 0.15);
+  --j-green:          #10B981;
+  --j-green-soft:     rgba(16, 185, 129, 0.16);
+  --j-amber:          #F59E0B;
+  --j-amber-soft:     rgba(245, 158, 11, 0.16);
+  --j-red:            #EF4444;
+  --j-red-soft:       rgba(239, 68, 68, 0.16);
+  --j-blue:           #3E7BFA;
+  --j-blue-soft:      rgba(62, 123, 250, 0.16);
+  --j-purple:         #8B5CF6;
+  --j-purple-soft:    rgba(139, 92, 246, 0.16);
+  --j-cyan:           #06B6D4;
+  --j-cyan-soft:      rgba(6, 182, 212, 0.16);
 
   /* ─── Text Hierarchy ──────────────────────────────────────────── */
-  --j-text:           hsl(220 20% 94%);   /* primary body text        */
-  --j-text-sub:       hsl(220 12% 70%);   /* secondary / muted        */
-  --j-text-dim:       hsl(220 10% 52%);   /* placeholder / disabled   */
-  --j-text-faint:     hsl(220 8% 36%);    /* very subtle labels       */
+  --j-text:           #F4F6F9;   /* primary body text        */
+  --j-text-sub:       #8A94A6;   /* secondary / muted        */
+  --j-text-dim:       #64748B;   /* placeholder / disabled   */
+  --j-text-faint:     #475569;   /* very subtle labels       */
 
   /* ─── Border / Dividers ───────────────────────────────────────── */
-  --j-border:         hsla(230, 30%, 60%, 0.10);
-  --j-border-bright:  hsla(230, 30%, 60%, 0.20);
+  --j-border:         #222937;
+  --j-border-bright:  #2E3747;
 
   /* ─── Radius ──────────────────────────────────────────────────── */
   --j-r-xs:    4px;

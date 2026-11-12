@@ -16,7 +16,10 @@ class Settings(BaseSettings):
     LLAMA_MODEL_ID: str = "nvidia/nemotron-3-ultra-550b-a55b"
     MINIMAX_MODEL_ID: str = "nvidia/nemotron-3.5-super-vl-120b-a12b"
     DEEPSEEK_MODEL_ID: str = "nvidia/nemotron-3-ultra-550b-a55b"
+    DEEPSEEK_FLASH_MODEL_ID: str = "deepseek-ai/deepseek-v4.1-flash"
     NEMOTRON_MODEL_ID: str = "nvidia/nemotron-3-ultra-550b-a55b"
+    NEMOTRON_VL_MODEL_ID: str = "nvidia/nemotron-3.5-super-vl-120b-a12b"
+    GLM_MODEL_ID: str = "z-ai/glm-5.3-flash"
 
     MODEL_PROVIDER: str = "nim"  # "nim" or "mock"
 

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 
 export interface TelemetryData {
   routing_ms: number;
@@ -144,6 +144,15 @@ export function useJohnnyApi() {
   const [activeTask, setActiveTask] = useState<TaskState | null>(null);
   const [browserStatus, setBrowserStatus] = useState<BrowserStatusState | null>(null);
   const [memoryItems, setMemoryItems] = useState<MemoryItem[]>([]);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  const stopGenerating = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsProcessing(false);
+  }, []);
 
   // --- Browser Automation APIs ---
   const fetchBrowserStatus = useCallback(async () => {
@@ -492,16 +501,23 @@ export function useJohnnyApi() {
     setMessages((prev) => [...prev, userMsg, initialJohnnyMsg]);
     setIsProcessing(true);
 
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    const ownsController = () => abortControllerRef.current === controller;
+
     try {
       if (imagePath) {
         // ── Vision path ──────────────────────────────────────────────────────
         const response = await fetch(`${API_BASE_URL}/image/analyze`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image_path: imagePath, prompt })
+          body: JSON.stringify({ image_path: imagePath, prompt }),
+          signal: controller.signal
         });
         const data = await response.json();
         if (!response.ok) throw new Error(data.detail || 'Image analysis failed');
+
+        if (!ownsController()) return;
 
         const analysisText = typeof data.vision_result?.analysis_raw === 'string'
           ? data.vision_result.analysis_raw
@@ -526,24 +542,37 @@ export function useJohnnyApi() {
         // ── Text chat path ───────────────────────────────────────────────────
         // Build conversation history from all settled (non-streaming) messages,
         // skipping the welcome message and the current empty streaming placeholder.
-        // This gives the LLM full multi-turn context on every request.
+        // Sliding window of the last 6 messages (3 full turns) to minimize token burn and latency.
+        // Long-term facts and project context are already injected via Semantic Memory.
         const historyPayload = messages
           .filter((m) => m.id !== 'welcome' && !m.isStreaming && m.text.trim())
+          .slice(-6)
           .map((m) => ({
             role: m.sender === 'user' ? 'user' : 'assistant',
             content: m.text
           }));
 
         try {
-          // Primary: SSE streaming endpoint
+          // Primary: SSE streaming endpoint with interrupt signal support
           const response = await fetch(`${API_BASE_URL}/chat/stream`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt, stream: true, history: historyPayload })
+            body: JSON.stringify({ prompt, stream: true, history: historyPayload }),
+            signal: controller.signal
           });
 
           if (!response.ok || !response.body) {
+            if (controller.signal.aborted) {
+              const abortErr = new Error('Generation paused');
+              abortErr.name = 'AbortError';
+              throw abortErr;
+            }
             const errBody = await response.text().catch(() => '');
+            if (controller.signal.aborted) {
+              const abortErr = new Error('Generation paused');
+              abortErr.name = 'AbortError';
+              throw abortErr;
+            }
             throw new Error(`Stream endpoint returned ${response.status}: ${errBody}`);
           }
 
@@ -570,13 +599,15 @@ export function useJohnnyApi() {
                 const parsed = JSON.parse(dataContent);
                 if (parsed.type === 'token') {
                   accumulatedText += parsed.token;
-                  setMessages((prev) =>
-                    prev.map((msg) =>
-                      msg.id === johnnyMessageId ? { ...msg, text: accumulatedText } : msg
-                    )
-                  );
+                  if (ownsController()) {
+                    setMessages((prev) =>
+                      prev.map((msg) =>
+                        msg.id === johnnyMessageId ? { ...msg, text: accumulatedText } : msg
+                      )
+                    );
+                  }
                 } else if (parsed.type === 'thought') {
-                  if (!accumulatedText) {
+                  if (!accumulatedText && ownsController()) {
                     setMessages((prev) =>
                       prev.map((msg) =>
                         msg.id === johnnyMessageId ? { ...msg, text: 'Thinking...' } : msg
@@ -586,7 +617,7 @@ export function useJohnnyApi() {
                 } else if (parsed.type === 'telemetry') {
                   modelUsed = parsed.model_used || modelUsed;
                   telemetryResult = parsed.telemetry;
-                  if (telemetryResult) setLatestTelemetry(telemetryResult);
+                  if (telemetryResult && ownsController()) setLatestTelemetry(telemetryResult);
                 } else if (parsed.type === 'error') {
                   accumulatedText += parsed.token || '';
                 }
@@ -594,60 +625,94 @@ export function useJohnnyApi() {
             }
           }
 
-          if (!accumulatedText.trim()) {
+          if (!accumulatedText.trim() && !controller.signal.aborted) {
             throw new Error('Streaming produced no output — falling back to /generate');
           }
 
-          setMessages((prev) =>
-            prev.map((msg) =>
-              msg.id === johnnyMessageId
-                ? { ...msg, text: accumulatedText, modelUsed, telemetry: telemetryResult, isStreaming: false }
-                : msg
-            )
-          );
+          if (ownsController()) {
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === johnnyMessageId
+                  ? { ...msg, text: accumulatedText, modelUsed, telemetry: telemetryResult, isStreaming: false }
+                  : msg
+              )
+            );
+          }
 
-        } catch (streamErr) {
+        } catch (streamErr: any) {
+          if (streamErr?.name === 'AbortError' || controller.signal.aborted) {
+            if (ownsController()) {
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === johnnyMessageId
+                    ? { ...msg, text: msg.text ? `${msg.text} ⏸️ (Paused)` : '⏸️ Generation paused.', isStreaming: false }
+                    : msg
+                )
+              );
+            }
+            return;
+          }
           // Fallback: non-streaming /generate endpoint (same history, same routing)
           console.warn('Streaming failed, falling back to /generate:', streamErr);
           const fallbackRes = await fetch(`${API_BASE_URL}/chat/generate`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt, stream: false, history: historyPayload })
+            body: JSON.stringify({ prompt, stream: false, history: historyPayload }),
+            signal: controller.signal
           });
           const fallbackData = await fallbackRes.json();
           if (!fallbackRes.ok) {
             throw new Error(fallbackData.detail || `Backend error ${fallbackRes.status}`);
           }
-          setMessages((prev) =>
-            prev.map((msg) =>
-              msg.id === johnnyMessageId
-                ? {
-                    ...msg,
-                    text: fallbackData.response || fallbackData.reply || '(empty response)',
-                    modelUsed: fallbackData.model_used || 'unknown',
-                    telemetry: fallbackData.telemetry,
-                    isStreaming: false
-                  }
-                : msg
-            )
-          );
-          if (fallbackData.telemetry) setLatestTelemetry(fallbackData.telemetry);
+          if (ownsController()) {
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === johnnyMessageId
+                  ? {
+                      ...msg,
+                      text: fallbackData.response || fallbackData.reply || '(empty response)',
+                      modelUsed: fallbackData.model_used || 'unknown',
+                      telemetry: fallbackData.telemetry,
+                      isStreaming: false
+                    }
+                  : msg
+              )
+            );
+            if (fallbackData.telemetry) setLatestTelemetry(fallbackData.telemetry);
+          }
         }
       }
     } catch (err: any) {
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === johnnyMessageId
-            ? {
-                ...msg,
-                text: `❌ ${err.message || 'Failed to reach backend. Is python backend running on http://127.0.0.1:8000?'}`,
-                isStreaming: false
-              }
-            : msg
-        )
-      );
+      if (err?.name === 'AbortError' || controller.signal.aborted) {
+        if (ownsController()) {
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === johnnyMessageId
+                ? { ...msg, text: msg.text ? `${msg.text} ⏸️ (Paused)` : '⏸️ Generation paused.', isStreaming: false }
+                : msg
+            )
+          );
+        }
+        return;
+      }
+      if (ownsController()) {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === johnnyMessageId
+              ? {
+                  ...msg,
+                  text: `❌ ${err.message || 'Failed to reach backend. Is python backend running on http://127.0.0.1:8000?'}`,
+                  isStreaming: false
+                }
+              : msg
+          )
+        );
+      }
     } finally {
-      setIsProcessing(false);
+      if (ownsController()) {
+        abortControllerRef.current = null;
+        setIsProcessing(false);
+      }
     }
   }, [messages]);
 
@@ -685,6 +750,7 @@ export function useJohnnyApi() {
     memoryItems,
     queryMemory,
     recordMemory,
-    clearMemoryTier
+    clearMemoryTier,
+    stopGenerating
   };
 }
