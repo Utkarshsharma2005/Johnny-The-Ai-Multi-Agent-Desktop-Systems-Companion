@@ -148,10 +148,18 @@ export function useJohnnyApi() {
 
   const stopGenerating = useCallback(() => {
     if (abortControllerRef.current) {
+      // Abort first so running handlers can still pass ownsController() and
+      // finalize the cancelled message before we clear the ref.
       abortControllerRef.current.abort();
-      abortControllerRef.current = null;
+      // Use a microtask flush so abort event handlers (which check ownsController)
+      // run against the current ref before it is cleared.
+      setTimeout(() => {
+        abortControllerRef.current = null;
+        setIsProcessing(false);
+      }, 0);
+    } else {
+      setIsProcessing(false);
     }
-    setIsProcessing(false);
   }, []);
 
   // --- Browser Automation APIs ---

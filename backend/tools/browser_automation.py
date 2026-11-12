@@ -48,6 +48,8 @@ class BrowserAutomationController:
         self.is_connected: bool = True
         self.active_screenshot_b64: Optional[str] = None
         self.screenshot_path: Optional[str] = None
+        self.screenshot_width: int = 1280
+        self.screenshot_height: int = 800
         self.interactive_elements: List[Dict[str, str]] = []
         
         # Locate system browser binary
@@ -155,6 +157,10 @@ class BrowserAutomationController:
                 url_hash = hashlib.md5(clean_url.encode()).hexdigest()[:12]
                 target_shot = screenshot_dir / f"{url_hash}.png"
 
+                # Record filesystem-clock timestamp BEFORE launch so we can compare
+                # target_shot.stat().st_mtime (same clock) for a freshness check.
+                fs_start = time.time()
+
                 cmd = [
                     self.chrome_binary,
                     "--headless=new",
@@ -164,7 +170,13 @@ class BrowserAutomationController:
                     "--dump-dom",
                     clean_url
                 ]
-                proc = subprocess.run(cmd, capture_output=True, text=False, timeout=14)
+                proc = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=False,
+                    timeout=14,
+                    stderr=subprocess.DEVNULL,  # stderr is unbounded; discard it
+                )
                 raw_bytes = proc.stdout[:self.MAX_RESPONSE_BYTES] if proc.stdout else b""
                 if proc.returncode == 0 and raw_bytes:
                     raw_html = raw_bytes.decode("utf-8", errors="replace")
@@ -172,9 +184,15 @@ class BrowserAutomationController:
                     title_m = re.search(r"<title>(.*?)</title>", raw_html, re.IGNORECASE | re.DOTALL)
                     title = title_m.group(1).strip() if title_m else clean_url
 
-                    # Resolve base href for relative links
+                    # Resolve base href for relative links.
+                    # If the <base href> is itself relative, resolve it against clean_url first
+                    # so that subsequent urljoin() calls produce correct absolute URLs.
                     base_m = re.search(r'<base\s+[^>]*href=["\']([^"\']+)["\']', raw_html, re.IGNORECASE)
-                    base_url = base_m.group(1) if base_m else clean_url
+                    if base_m:
+                        raw_base = base_m.group(1)
+                        base_url = urljoin(clean_url, raw_base)  # handles relative base hrefs
+                    else:
+                        base_url = clean_url
 
                     # Extract interactive links & buttons
                     links = []
@@ -194,20 +212,26 @@ class BrowserAutomationController:
                     clean_text = ' '.join(clean_text.split())[:2000]
 
                     # Read and compress screenshot b64 (cap at 1024 width to avoid memory bloat)
-                    # Only use screenshot if Chrome wrote it during THIS navigation (freshness check)
+                    # Only use screenshot if Chrome wrote it during THIS navigation (freshness check).
+                    # fs_start and st_mtime use the same OS clock, so the comparison is valid.
                     b64_data = None
-                    if target_shot.exists() and target_shot.stat().st_mtime >= start and target_shot.stat().st_size > 0:
+                    img_w, img_h = 1280, 800  # track actual encoded dimensions
+                    if target_shot.exists() and target_shot.stat().st_mtime >= fs_start and target_shot.stat().st_size > 0:
                         try:
                             with Image.open(target_shot) as im:
                                 w, h = im.size
                                 if w > 1024:
                                     ratio = 1024.0 / w
-                                    im = im.resize((1024, max(1, int(h * ratio))), Image.Resampling.LANCZOS)
+                                    new_h = max(1, int(h * ratio))
+                                    im = im.resize((1024, new_h), Image.Resampling.LANCZOS)
+                                    img_w, img_h = 1024, new_h
+                                else:
+                                    img_w, img_h = w, h
                                 buf = io.BytesIO()
                                 im.save(buf, format="JPEG", quality=82)
                                 b64_data = "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
                         except Exception:
-                            # Fallback to direct raw read
+                            # Fallback to direct raw read (dimensions stay at defaults)
                             try:
                                 with open(target_shot, "rb") as f:
                                     b64_data = "data:image/png;base64," + base64.b64encode(f.read()).decode("ascii")
@@ -219,6 +243,8 @@ class BrowserAutomationController:
                     self.page_content = clean_text
                     self.active_screenshot_b64 = b64_data
                     self.screenshot_path = str(target_shot) if (target_shot.exists() and b64_data) else None
+                    self.screenshot_width = img_w
+                    self.screenshot_height = img_h
                     self.interactive_elements = links
                     self.last_action = f"CHROME NAVIGATE to {clean_url}"
 
@@ -247,9 +273,24 @@ class BrowserAutomationController:
                 follow_redirects=True,
                 max_redirects=self.MAX_REDIRECTS,
             ) as client:
-                res = client.get(clean_url)
-                raw_text = res.text
+                with client.stream("GET", clean_url) as res:
+                    # Reject oversized responses declared in Content-Length
+                    declared = int(res.headers.get("content-length", 0))
+                    if declared and declared > self.MAX_RESPONSE_BYTES:
+                        raise ValueError(f"Response Content-Length {declared} exceeds MAX_RESPONSE_BYTES limit")
+                    # Stream and cap body at MAX_RESPONSE_BYTES to avoid loading giant pages
+                    chunks: list[bytes] = []
+                    total = 0
+                    for chunk in res.iter_bytes(chunk_size=8192):
+                        total += len(chunk)
+                        if total > self.MAX_RESPONSE_BYTES:
+                            chunks.append(chunk[:self.MAX_RESPONSE_BYTES - (total - len(chunk))])
+                            break
+                        chunks.append(chunk)
+                    raw_bytes_http = b"".join(chunks)
+                    status_code = res.status_code
 
+            raw_text = raw_bytes_http.decode("utf-8", errors="replace")
             title_match = re.search(r"<title>(.*?)</title>", raw_text, re.IGNORECASE | re.DOTALL)
             title = title_match.group(1).strip() if title_match else clean_url
             clean_body = re.sub(r"<[^>]+>", " ", raw_text)
@@ -269,7 +310,7 @@ class BrowserAutomationController:
                 "success": True,
                 "url": clean_url,
                 "title": title,
-                "status_code": res.status_code,
+                "status_code": status_code,
                 "engine": "httpx_reader",
                 "content_snippet": clean_body[:500],
                 "latency_ms": elapsed
@@ -372,8 +413,8 @@ class BrowserAutomationController:
             "url": self.active_url,
             "screenshot_path": str(target_path),
             "screenshot_b64": self.active_screenshot_b64,
-            "width": 1280,
-            "height": 800
+            "width": self.screenshot_width,
+            "height": self.screenshot_height
         }
 
     def get_status(self) -> Dict[str, Any]:

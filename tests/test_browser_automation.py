@@ -72,8 +72,11 @@ def test_browser_tools_in_registry():
     assert nav_result["result"]["url"] == "https://example.org"
 
     screenshot_result = tool_registry.execute_tool("browser_screenshot", {})
-    # HTTP navigation clears screenshot; expect failure when no Chrome screenshot available
-    assert "screenshot_path" in screenshot_result["result"] or screenshot_result["result"].get("success") is False
+    # HTTP navigation clears Chrome screenshot state → take_screenshot returns success=False
+    ss_res = screenshot_result["result"]
+    assert ss_res.get("success") is False, (
+        f"Expected success=False after HTTP navigation (no Chrome screenshot), got: {ss_res}"
+    )
 
 
 @pytest.mark.asyncio

@@ -51,8 +51,10 @@ def _process_memory_integration(prompt: str) -> str:
     lower_p = clean_p.lower()
 
     try:
-        # Detect explicit memory storage triggers
-        for trig in ["remember that", "remember:", "take note that", "please remember", "note that", "prefer that"]:
+        # Detect explicit, affirmative memory storage triggers only.
+        # Excludes "note that" (explanatory) and "prefer that" (too vague) to avoid
+        # storing negations or incidental phrases like "note that retries are disabled".
+        for trig in ["remember that", "remember:", "take note that", "please remember"]:
             if trig in lower_p:
                 fact = clean_p[lower_p.find(trig) + len(trig):].strip(" :,-.")
                 if fact:

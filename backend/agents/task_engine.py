@@ -364,16 +364,27 @@ class AutonomousTaskEngine:
         import re
         goal_lower = goal.lower().strip()
 
-        # Extract full URL or normalize bare domain (e.g. docs.python.org -> https://docs.python.org)
-        url_match = re.search(r'https?://[^\s\'"]+', goal)
+        # Extract full URL — strip surrounding prose delimiters like `(`, `)`, `"`, `'`, `.` from the match
+        url_match = re.search(r'https?://[^\s\'"<>()\[\]]+', goal)
+        host_match = None
         if url_match:
-            target_url = url_match.group(0)
+            target_url = url_match.group(0).rstrip(".,;:!?)")
         else:
-            host_match = re.search(r'\b(?:[a-zA-Z0-9-]+\.)+(?:org|com|net|io|dev|edu|gov|co|ai)\b[^\s\'"]*', goal)
-            target_url = f"https://{host_match.group(0)}" if host_match else None
+            # Bare-domain normalization (e.g. docs.python.org → https://docs.python.org),
+            # also strip trailing punctuation
+            host_match = re.search(r'\b(?:[a-zA-Z0-9-]+\.)+(?:org|com|net|io|dev|edu|gov|co|ai)\b[^\s\'"()]*', goal)
+            target_url = f"https://{host_match.group(0).rstrip('.,;:!?)')}" if host_match else None
+
+        # Build a URL-scrubbed version of goal_lower for keyword matching so that words
+        # inside URLs (e.g. "git" in "github.com", "docker" in "hub.docker.com") don't
+        # trigger operation-specific steps unintentionally.
+        scrubbed_lower = re.sub(r'https?://\S+', '', goal_lower)
+        if host_match:
+            scrubbed_lower = re.sub(re.escape(host_match.group(0).lower()), '', scrubbed_lower)
+        scrubbed_lower = scrubbed_lower.strip()
 
         # ── 1. Version Control & Git Operations (high precedence over general 'check') ──
-        if re.search(r'\b(git|commit|diff|branch|push|rebase|stash|pull request|pr)\b', goal_lower):
+        if re.search(r'\b(git|commit|diff|branch|push|rebase|stash|pull request|pr)\b', scrubbed_lower):
             return [
                 TaskStep(1, "Inspect git repository status and modified files", tool_name="git_status", tool_args={}),
                 TaskStep(2, "Review active code diffs across workspace", tool_name="git_diff", tool_args={}),
@@ -381,15 +392,18 @@ class AutonomousTaskEngine:
             ]
 
         # ── 2. Docker & Container Management ──────────────────────────────
-        if re.search(r'\b(docker|container|dockerfile|compose)\b', goal_lower):
+        if re.search(r'\b(docker|container|dockerfile|compose)\b', scrubbed_lower):
             return [
                 TaskStep(1, "Inspect active Docker containers", tool_name="docker_ps", tool_args={}),
                 TaskStep(2, "Inspect workspace container configuration", tool_name="list_dir", tool_args={"dir_path": "."})
             ]
 
         # ── 3. Web & Browser Automation Goals ──────────────────────────────
-        # Use exact word boundaries to avoid false positives (e.g. 'webhook')
-        is_browser_intent = bool(target_url) or bool(re.search(r'\b(browse|browser|navigate|website|webpage|scrape)\b', goal_lower))
+        # Only select browser plan when the goal contains an explicit browser verb.
+        # A URL alone is not sufficient — it may appear in an integration-test or webhook goal.
+        # target_url remains available as context for other operations.
+        explicit_browser_verb = bool(re.search(r'\b(browse|browser|navigate|website|webpage|scrape)\b', scrubbed_lower))
+        is_browser_intent = explicit_browser_verb
         if is_browser_intent:
             if target_url:
                 return [
@@ -405,7 +419,7 @@ class AutonomousTaskEngine:
                 ]
 
         # ── 4. Test Execution & Quality Assurance ──────────────────────────
-        if re.search(r'\b(pytest|test|tests|test suite|unit test|integration test)\b', goal_lower):
+        if re.search(r'\b(pytest|test|tests|test suite|unit test|integration test)\b', scrubbed_lower):
             return [
                 TaskStep(1, "Inspect repository and active working state", tool_name="git_status", tool_args={}),
                 TaskStep(2, "Inspect test suite directory and test manifests", tool_name="list_dir", tool_args={"dir_path": "tests"}),
