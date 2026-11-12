@@ -536,8 +536,11 @@ export function useJohnnyApi() {
         // Build conversation history from all settled (non-streaming) messages,
         // skipping the welcome message and the current empty streaming placeholder.
         // This gives the LLM full multi-turn context on every request.
+        // Sliding window of the last 6 messages (3 full turns) to minimize token burn and latency.
+        // Long-term facts and project context are already injected via Semantic Memory.
         const historyPayload = messages
           .filter((m) => m.id !== 'welcome' && !m.isStreaming && m.text.trim())
+          .slice(-6)
           .map((m) => ({
             role: m.sender === 'user' ? 'user' : 'assistant',
             content: m.text

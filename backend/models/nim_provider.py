@@ -21,6 +21,7 @@ import httpx
 
 from backend.models.base import ModelProvider
 from backend.core.config import settings
+from backend.core.cache import system_cache, make_cache_key
 from backend.core import redaction
 
 log = logging.getLogger(__name__)
@@ -63,6 +64,28 @@ class NimProvider(ModelProvider):
         self.base_url = (base_url or settings.NIM_BASE_URL).rstrip("/")
         self._auth_headers = {
             "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+
+    def _get_auth_headers(self, model: str) -> Dict[str, str]:
+        key = self.api_key
+        m = (model or "").lower()
+        if "glm" in m and os.getenv("glm-5.3-flash"):
+            key = os.getenv("glm-5.3-flash", key)
+        elif "minimax" in m and os.getenv("minimax-m3.1-flash"):
+            key = os.getenv("minimax-m3.1-flash", key)
+        elif "mistral" in m and os.getenv("mistral-large-4-1t-a52b"):
+            key = os.getenv("mistral-large-4-1t-a52b", key)
+        elif "deepseek" in m and os.getenv("deepseek-v4.1-flash") and os.getenv("deepseek-v4.1-flash") != "NIM_API_KEY":
+            key = os.getenv("deepseek-v4.1-flash", key)
+        elif "nemotron" in m and os.getenv("nemotron-3.5-super-vl-120b-a12b") and not os.getenv("nemotron-3.5-super-vl-120b-a12b", "").startswith("NVIDIA"):
+            key = os.getenv("nemotron-3.5-super-vl-120b-a12b", key)
+
+        if key and key.startswith("Bearer "):
+            key = key[7:].strip()
+
+        return {
+            "Authorization": f"Bearer {key}",
             "Content-Type": "application/json",
         }
 
@@ -148,8 +171,15 @@ class NimProvider(ModelProvider):
         Raises on failure — callers decide how to handle errors.
         """
         model = model_id or settings.LLAMA_MODEL_ID
+        cache_key = make_cache_key(f"nim:{model}", (prompt, history))
+        cached = system_cache.get(cache_key)
+        if cached is not None:
+            log.info("NIM cache HIT | model=%s", model)
+            return cached
+
         url = f"{self.base_url}/chat/completions"
         messages = self._build_messages(prompt, history=history)
+        headers = self._get_auth_headers(model)
 
         payload: Dict[str, Any] = {
             "model": model,
@@ -160,7 +190,7 @@ class NimProvider(ModelProvider):
 
         t0 = time.perf_counter()
         async with _get_client() as client:
-            response = await self._post_with_retry(client, url, payload, self._auth_headers, timeout=settings.NIM_REQUEST_TIMEOUT)
+            response = await self._post_with_retry(client, url, payload, headers, timeout=settings.NIM_REQUEST_TIMEOUT)
 
         data = response.json()
         latency_ms = (time.perf_counter() - t0) * 1000
@@ -168,6 +198,9 @@ class NimProvider(ModelProvider):
         content = msg.get("content")
         if not content:
             content = msg.get("reasoning_content") or ""
+
+        if content:
+            system_cache.set(cache_key, content, ttl_s=300.0)
 
         log.info(
             "NIM generate OK | model=%s latency=%.0fms tokens_in=%s tokens_out=%s",
@@ -201,7 +234,7 @@ class NimProvider(ModelProvider):
             "stream": True,
         }
 
-        headers = {**self._auth_headers, "Accept": "text/event-stream"}
+        headers = {**self._get_auth_headers(model), "Accept": "text/event-stream"}
 
         t0 = time.perf_counter()
         token_count = 0
