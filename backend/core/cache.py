@@ -121,3 +121,4 @@ def make_cache_key(prefix: str, payload: Any) -> str:
 
 # Global Singleton Cache Instance
 system_cache = LRUTTLCache(capacity=500, default_ttl_s=300.0)
+

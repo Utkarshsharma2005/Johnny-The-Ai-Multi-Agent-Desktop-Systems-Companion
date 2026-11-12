@@ -171,7 +171,10 @@ class NimProvider(ModelProvider):
         Raises on failure — callers decide how to handle errors.
         """
         model = model_id or settings.LLAMA_MODEL_ID
-        cache_key = make_cache_key(f"nim:{model}", (prompt, history))
+        temperature = kwargs.get("temperature", 0.7)
+        max_tokens = kwargs.get("max_tokens", 2048)
+
+        cache_key = make_cache_key(f"nim:{self.base_url}:{model}", (prompt, history, temperature, max_tokens))
         cached = system_cache.get(cache_key)
         if cached is not None:
             log.info("NIM cache HIT | model=%s", model)
@@ -184,8 +187,8 @@ class NimProvider(ModelProvider):
         payload: Dict[str, Any] = {
             "model": model,
             "messages": messages,
-            "temperature": kwargs.get("temperature", 0.7),
-            "max_tokens": kwargs.get("max_tokens", 2048),
+            "temperature": temperature,
+            "max_tokens": max_tokens,
         }
 
         t0 = time.perf_counter()
@@ -268,8 +271,9 @@ class NimProvider(ModelProvider):
             if model != primary:
                 log.warning("Model %s failed (%s). Falling back to primary %s", model, e, primary)
                 payload["model"] = primary
+                fallback_headers = {**self._get_auth_headers(primary), "Accept": "text/event-stream"}
                 async with _get_client() as client:
-                    async with client.stream("POST", url, json=payload, headers=headers) as fallback_resp:
+                    async with client.stream("POST", url, json=payload, headers=fallback_headers) as fallback_resp:
                         fallback_resp.raise_for_status()
                         async for line in fallback_resp.aiter_lines():
                             if not line:

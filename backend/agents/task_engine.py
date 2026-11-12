@@ -359,42 +359,57 @@ class AutonomousTaskEngine:
         """
         Dynamically decomposes user goals into structured, phased task execution steps
         matched to available workspace, browser, git, and terminal tools.
+        Uses exact token boundaries and priority ordering to prevent intent collisions.
         """
         import re
         goal_lower = goal.lower().strip()
+
+        # Extract full URL or normalize bare domain (e.g. docs.python.org -> https://docs.python.org)
         url_match = re.search(r'https?://[^\s\'"]+', goal)
-        target_url = url_match.group(0) if url_match else None
+        if url_match:
+            target_url = url_match.group(0)
+        else:
+            host_match = re.search(r'\b(?:[a-zA-Z0-9-]+\.)+(?:org|com|net|io|dev|edu|gov|co|ai)\b[^\s\'"]*', goal)
+            target_url = f"https://{host_match.group(0)}" if host_match else None
 
-        # ── 1. Web & Browser Automation Goals ──────────────────────────────
-        if target_url or any(k in goal_lower for k in ["browse", "website", "web", "navigate", "page", "url", "scrape"]):
-            url = target_url or "https://example.com"
-            return [
-                TaskStep(1, f"Navigate browser controller to {url}", tool_name="browser_navigate", tool_args={"url": url}),
-                TaskStep(2, "Capture rendered page viewport screenshot & inspect DOM", tool_name="browser_screenshot", tool_args={}),
-                TaskStep(3, "Verify extracted content & interactive links", tool_name="list_dir", tool_args={"dir_path": ".johnny/browser_screenshots"})
-            ]
-
-        # ── 2. Test Execution & Quality Assurance ──────────────────────────
-        if any(k in goal_lower for k in ["test", "verify", "run test", "pytest", "check"]):
-            return [
-                TaskStep(1, "Inspect repository and active working state", tool_name="git_status", tool_args={}),
-                TaskStep(2, "Inspect test suite directory and test manifests", tool_name="list_dir", tool_args={"dir_path": "tests"}),
-                TaskStep(3, "Execute automated test verification in sandbox", tool_name="run_terminal_command", tool_args={"command": "MODEL_PROVIDER=mock pytest tests/ -q"})
-            ]
-
-        # ── 3. Version Control & Git Operations ────────────────────────────
-        if any(k in goal_lower for k in ["git", "commit", "diff", "branch", "push"]):
+        # ── 1. Version Control & Git Operations (high precedence over general 'check') ──
+        if re.search(r'\b(git|commit|diff|branch|push|rebase|stash|pull request|pr)\b', goal_lower):
             return [
                 TaskStep(1, "Inspect git repository status and modified files", tool_name="git_status", tool_args={}),
                 TaskStep(2, "Review active code diffs across workspace", tool_name="git_diff", tool_args={}),
                 TaskStep(3, "Verify branch consistency against project spec", tool_name="read_file", tool_args={"file_path": "README.md"})
             ]
 
-        # ── 4. Docker & Container Management ──────────────────────────────
-        if any(k in goal_lower for k in ["docker", "container", "service"]):
+        # ── 2. Docker & Container Management ──────────────────────────────
+        if re.search(r'\b(docker|container|dockerfile|compose)\b', goal_lower):
             return [
                 TaskStep(1, "Inspect active Docker containers", tool_name="docker_ps", tool_args={}),
                 TaskStep(2, "Inspect workspace container configuration", tool_name="list_dir", tool_args={"dir_path": "."})
+            ]
+
+        # ── 3. Web & Browser Automation Goals ──────────────────────────────
+        # Use exact word boundaries to avoid false positives (e.g. 'webhook')
+        is_browser_intent = bool(target_url) or bool(re.search(r'\b(browse|browser|navigate|website|webpage|scrape)\b', goal_lower))
+        if is_browser_intent:
+            if target_url:
+                return [
+                    TaskStep(1, f"Navigate browser controller to {target_url}", tool_name="browser_navigate", tool_args={"url": target_url}),
+                    TaskStep(2, "Capture rendered page viewport screenshot & inspect DOM", tool_name="browser_screenshot", tool_args={}),
+                    TaskStep(3, "Verify extracted content & interactive links", tool_name="list_dir", tool_args={"dir_path": ".johnny/browser_screenshots"})
+                ]
+            else:
+                # No destination URL specified — inspect workspace documentation first to locate target
+                return [
+                    TaskStep(1, "Inspect workspace documentation to identify target service URL", tool_name="read_file", tool_args={"file_path": "README.md"}),
+                    TaskStep(2, "Inspect active directory configuration", tool_name="list_dir", tool_args={"dir_path": "."})
+                ]
+
+        # ── 4. Test Execution & Quality Assurance ──────────────────────────
+        if re.search(r'\b(pytest|test|tests|test suite|unit test|integration test)\b', goal_lower):
+            return [
+                TaskStep(1, "Inspect repository and active working state", tool_name="git_status", tool_args={}),
+                TaskStep(2, "Inspect test suite directory and test manifests", tool_name="list_dir", tool_args={"dir_path": "tests"}),
+                TaskStep(3, "Execute automated test verification in sandbox", tool_name="run_terminal_command", tool_args={"command": "MODEL_PROVIDER=mock pytest tests/ -q"})
             ]
 
         # ── 5. General Engineering & Architecture ──────────────────────────

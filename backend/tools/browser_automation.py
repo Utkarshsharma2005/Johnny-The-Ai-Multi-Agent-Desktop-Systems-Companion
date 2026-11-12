@@ -1,6 +1,7 @@
 import io
 import os
 import re
+import hashlib
 import socket
 import ipaddress
 import time
@@ -138,9 +139,6 @@ class BrowserAutomationController:
 
         start = time.perf_counter()
         clean_url = url.strip()
-        screenshot_dir = Path(".johnny/browser_screenshots").resolve()
-        screenshot_dir.mkdir(parents=True, exist_ok=True)
-        target_shot = screenshot_dir / "latest_view.png"
 
         # ── 1. Try Native Chrome Headless Execution ─────────────────────────
         use_chrome = (
@@ -150,22 +148,33 @@ class BrowserAutomationController:
         )
         if use_chrome:
             try:
+                # Create screenshot dir inside Chrome block so mkdir failures fall through to HTTP
+                screenshot_dir = Path(".johnny/browser_screenshots").resolve()
+                screenshot_dir.mkdir(parents=True, exist_ok=True)
+                # Unique filename per URL to prevent race conditions between overlapping navigations
+                url_hash = hashlib.md5(clean_url.encode()).hexdigest()[:12]
+                target_shot = screenshot_dir / f"{url_hash}.png"
+
                 cmd = [
                     self.chrome_binary,
                     "--headless=new",
-                    "--no-sandbox",
                     "--disable-gpu",
                     "--window-size=1280,800",
                     f"--screenshot={str(target_shot)}",
                     "--dump-dom",
                     clean_url
                 ]
-                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=14)
-                if proc.returncode == 0 and proc.stdout:
-                    raw_html = proc.stdout
+                proc = subprocess.run(cmd, capture_output=True, text=False, timeout=14)
+                raw_bytes = proc.stdout[:self.MAX_RESPONSE_BYTES] if proc.stdout else b""
+                if proc.returncode == 0 and raw_bytes:
+                    raw_html = raw_bytes.decode("utf-8", errors="replace")
                     # Parse title
                     title_m = re.search(r"<title>(.*?)</title>", raw_html, re.IGNORECASE | re.DOTALL)
                     title = title_m.group(1).strip() if title_m else clean_url
+
+                    # Resolve base href for relative links
+                    base_m = re.search(r'<base\s+[^>]*href=["\']([^"\']+)["\']', raw_html, re.IGNORECASE)
+                    base_url = base_m.group(1) if base_m else clean_url
 
                     # Extract interactive links & buttons
                     links = []
@@ -173,7 +182,7 @@ class BrowserAutomationController:
                         href = m.group(1).strip()
                         txt = re.sub(r'<[^>]+>', '', m.group(2)).strip()
                         if txt and not href.startswith("javascript:"):
-                            full_url = urljoin(clean_url, href)
+                            full_url = urljoin(base_url, href)
                             links.append({"text": txt[:60], "href": full_url, "tag": "a"})
                         if len(links) >= 15:
                             break
@@ -185,8 +194,9 @@ class BrowserAutomationController:
                     clean_text = ' '.join(clean_text.split())[:2000]
 
                     # Read and compress screenshot b64 (cap at 1024 width to avoid memory bloat)
+                    # Only use screenshot if Chrome wrote it during THIS navigation (freshness check)
                     b64_data = None
-                    if target_shot.exists() and target_shot.stat().st_size > 0:
+                    if target_shot.exists() and target_shot.stat().st_mtime >= start and target_shot.stat().st_size > 0:
                         try:
                             with Image.open(target_shot) as im:
                                 w, h = im.size
@@ -208,7 +218,7 @@ class BrowserAutomationController:
                     self.active_title = title
                     self.page_content = clean_text
                     self.active_screenshot_b64 = b64_data
-                    self.screenshot_path = str(target_shot) if target_shot.exists() else None
+                    self.screenshot_path = str(target_shot) if (target_shot.exists() and b64_data) else None
                     self.interactive_elements = links
                     self.last_action = f"CHROME NAVIGATE to {clean_url}"
 
@@ -217,7 +227,7 @@ class BrowserAutomationController:
                         "success": True,
                         "url": clean_url,
                         "title": title,
-                        "status_code": 200,
+                        "status_code": None,  # Chrome --dump-dom does not return HTTP status
                         "engine": "chrome_headless",
                         "content_snippet": clean_text[:600],
                         "interactive_elements": links[:10],
@@ -249,6 +259,10 @@ class BrowserAutomationController:
             self.active_title = title
             self.page_content = clean_body
             self.last_action = f"NAVIGATE (HTTP) to {clean_url}"
+            # Clear any stale Chrome-only state so get_status() / take_screenshot() are consistent
+            self.active_screenshot_b64 = None
+            self.screenshot_path = None
+            self.interactive_elements = []
 
             elapsed = round((time.perf_counter() - start) * 1000.0, 2)
             return {
@@ -304,13 +318,13 @@ class BrowserAutomationController:
                 "result": nav_result
             }
 
-        self.last_action = f"CLICK element '{selector}'"
+        self.last_action = f"CLICK element '{selector}' (no match)"
         return {
-            "success": True,
+            "success": False,
             "url": self.active_url,
-            "action": "CLICK",
+            "action": "CLICK_UNSUPPORTED",
             "selector": selector,
-            "message": f"Successfully triggered click on '{selector}'"
+            "error": f"No interactive element matching '{selector}' found. Chrome click not supported without persistent session."
         }
 
     def type_text(self, selector: str, text: str) -> Dict[str, Any]:
@@ -336,6 +350,16 @@ class BrowserAutomationController:
         """
         if not self.active_url:
             return {"success": False, "error": "No active web page. Call navigate() first."}
+
+        # Verify a screenshot image is actually available before returning success
+        has_b64 = bool(self.active_screenshot_b64)
+        has_file = bool(self.screenshot_path and os.path.exists(self.screenshot_path))
+        if not has_b64 and not has_file:
+            return {
+                "success": False,
+                "url": self.active_url,
+                "error": "No rendered screenshot available. Navigate a page first using Chrome engine."
+            }
 
         target_path = Path(output_path or self.screenshot_path or ".johnny/browser_screenshots/latest_view.png").expanduser().resolve()
         target_path.parent.mkdir(parents=True, exist_ok=True)

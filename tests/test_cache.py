@@ -36,3 +36,4 @@ def test_make_cache_key():
 
     assert k1 == k2
     assert k1 != k3
+
